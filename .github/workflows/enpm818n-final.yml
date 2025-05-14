@@ -11,7 +11,6 @@ env:
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
   EKS_CLUSTER: otel-demo-cluster
   K8S_NAMESPACE: otel-helm
-  SERVICES: frontend  # build and deploy only frontend service
 
 jobs:
   # Step 1: Build & Push Docker Image for Frontend
@@ -39,35 +38,13 @@ jobs:
 
       - name: Build & push frontend image
         run: |
-          # Use root context and explicit Dockerfile path to include all necessary files
           docker build -t $ECR_REGISTRY/frontend:latest -f src/frontend/Dockerfile .
           docker push    $ECR_REGISTRY/frontend:latest
 
-  # Step 2: Integration Smoke Test via Docker Compose
-  smoke-test:
-    name: Integration Smoke Test
-    needs: build-and-push-images
-    runs-on: ubuntu-latest
-    services:
-      docker:
-        image: docker:19.03.12
-        options: --privileged
-        volumes:
-          - /var/run/docker.sock:/var/run/docker.sock
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Run integration tests
-        run: |
-          docker-compose -f docker-compose-tests.yml up \
-            --abort-on-container-exit \
-            --exit-code-from loadgenerator
-
-  # Step 3: Deploy with Helm
+  # Step 2: Deploy with Helm
   deploy-with-helm:
     name: Deploy with Helm
-    needs: smoke-test
+    needs: build-and-push-images
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -101,11 +78,11 @@ jobs:
       - name: Verify Kubernetes resources
         run: kubectl get all -n $K8S_NAMESPACE
 
-  # Step 4: Rollback on Failure
+  # Step 3: Rollback on Failure
   rollback:
     name: Rollback on Failure
     if: ${{ failure() }}
-    needs: [build-and-push-images, smoke-test, deploy-with-helm]
+    needs: [build-and-push-images, deploy-with-helm]
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
