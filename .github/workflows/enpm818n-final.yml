@@ -11,12 +11,12 @@ env:
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
   EKS_CLUSTER: otel-demo-cluster
   K8S_NAMESPACE: otel-helm
-  SERVICES: collector frontend  # list of services to build and deploy
+  SERVICES: frontend  # build and deploy only frontend service
 
 jobs:
-  # Step 1: Build & Push Docker Images
+  # Step 1: Build & Push Docker Image for Frontend
   build-and-push-images:
-    name: Build & Push Docker Images
+    name: Build & Push Frontend Image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -32,14 +32,12 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build & push each service
+      - name: Build & push frontend image
         run: |
-          for svc in $SERVICES; do
-            docker build -t $ECR_REGISTRY/$svc:latest ./src/$svc
-            docker push    $ECR_REGISTRY/$svc:latest
-          done
+          docker build -t $ECR_REGISTRY/frontend:latest ./src/frontend
+          docker push    $ECR_REGISTRY/frontend:latest
 
-  # Step 2: Smoke Test via Docker-Compose
+  # Step 2: Integration Smoke Test via Docker Compose
   smoke-test:
     name: Integration Smoke Test
     needs: build-and-push-images
@@ -54,7 +52,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Run demo integration tests
+      - name: Run integration tests
         run: |
           docker-compose -f docker-compose-tests.yml up \
             --abort-on-container-exit \
@@ -76,9 +74,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig --name $EKS_CLUSTER --region us-east-1
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region us-east-1
 
       - name: Add & update Helm repo
         run: |
@@ -92,12 +89,10 @@ jobs:
         run: |
           helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
             --namespace $K8S_NAMESPACE \
-            --set collector.image.repository=$ECR_REGISTRY/collector \
-            --set collector.image.tag=latest \
             --set frontend.image.repository=$ECR_REGISTRY/frontend \
             --set frontend.image.tag=latest
 
-      - name: Verify deployment
+      - name: Verify Kubernetes resources
         run: kubectl get all -n $K8S_NAMESPACE
 
   # Step 4: Rollback on Failure
@@ -114,9 +109,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig --name $EKS_CLUSTER --region us-east-1
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region us-east-1
 
-      - name: Helm rollback to last revision
+      - name: Helm rollback to previous release
         run: helm rollback otel-demo 1 -n $K8S_NAMESPACE
