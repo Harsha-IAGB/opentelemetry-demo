@@ -1,0 +1,139 @@
+# File: .github/workflows/ci-cd-helm.yml
+name: CI/CD Pipeline with Helm
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  EKS_CLUSTER: otel-demo-cluster
+  # This chart uses namespace "otel-helm"
+  K8S_NAMESPACE: otel-helm
+  # List of services you build & push
+  SERVICES: collector frontend
+
+jobs:
+  # ─────────────────────────────────
+  # 1) Build & Test (identical to before)
+  # ─────────────────────────────────
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+      - uses: actions/setup-python@v4
+        with: 
+            python-version: '3.9'
+      - run: pip install -r requirements.txt
+      - run: pytest --maxfail=1 --disable-warnings -q
+
+  # ─────────────────────────────────
+  # 2) Build & Push Images (unchanged)
+  # ─────────────────────────────────
+  build-and-push-images:
+    name: Build & Push Docker Images
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v1
+      - name: Build & push each service
+        run: |
+          for svc in $SERVICES; do
+            docker build -t $ECR_REGISTRY/$svc:latest ./src/$svc
+            docker push    $ECR_REGISTRY/$svc:latest
+          done
+
+  # ─────────────────────────────────
+  # 3) Deploy with Helm
+  # ─────────────────────────────────
+  deploy-with-helm:
+    name: Deploy with Helm
+    needs: build-and-push-images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # 3.1 Authenticate to AWS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 3.2 Point kubectl/helm at our EKS cluster
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
+
+      # 3.3 Add & refresh the OpenTelemetry Helm repo
+      - name: Add & update Helm repo
+        run: |
+          helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+          helm repo update
+
+      # 3.4 Ensure namespace exists (Phase 2 step 2)
+      - name: Create namespace
+        run: kubectl create namespace $K8S_NAMESPACE || true
+
+      # 3.5 Install or upgrade the demo chart (Phase 2 step 2)
+      - name: Helm upgrade --install
+        run: |
+          helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
+            --namespace $K8S_NAMESPACE \
+            --set collector.image.repository=$ECR_REGISTRY/collector \
+            --set collector.image.tag=latest \
+            --set frontend.image.repository=$ECR_REGISTRY/frontend \
+            --set frontend.image.tag=latest
+
+      # 3.6 Verify that pods & services are up (Phase 2 validation)
+      - name: Verify deployment
+        run: kubectl get all -n $K8S_NAMESPACE
+
+  # ─────────────────────────────────
+  # 4) Simulate & Rollback (optional)
+  # ─────────────────────────────────
+  simulate-and-rollback:
+    name: Simulate Upgrade & Rollback
+    needs: deploy-with-helm
+    if: github.event_name == 'workflow_dispatch'  # only run on manual trigger
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - run: aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
+
+      # 4.1 Simulate an upgrade that disables components (Phase 2 step 4)
+      - name: Helm upgrade (disable components)
+        run: |
+          helm upgrade otel-demo open-telemetry/opentelemetry-demo \
+            --namespace $K8S_NAMESPACE \
+            --set components.recommendation.enabled=false \
+            --set components.cart.enabled=false \
+            --set components.email.enabled=false
+
+      - name: Verify components disabled
+        run: kubectl get pods -n $K8S_NAMESPACE
+
+      # 4.2 Roll back to revision 1 (Phase 2 step 5)
+      - name: Helm rollback to v1
+        run: helm rollback otel-demo 1 -n $K8S_NAMESPACE
+
+      - name: Verify rollback
+        run: kubectl get pods -n $K8S_NAMESPACE
