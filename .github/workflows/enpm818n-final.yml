@@ -34,7 +34,8 @@ jobs:
 
       - name: Build & push frontend image
         run: |
-          docker build -t $ECR_REGISTRY/frontend:latest ./src/frontend
+          # Use root context and explicit Dockerfile path to include all necessary files
+          docker build -t $ECR_REGISTRY/frontend:latest -f src/frontend/Dockerfile .
           docker push    $ECR_REGISTRY/frontend:latest
 
   # Step 2: Integration Smoke Test via Docker Compose
