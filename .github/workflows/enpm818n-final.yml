@@ -9,7 +9,7 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-  EKS_CLUSTER: otel-demo-cluster
+  EKS_CLUSTER: otel-cluster
   K8S_NAMESPACE: otel-helm
 
 jobs:
