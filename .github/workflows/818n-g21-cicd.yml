@@ -75,10 +75,10 @@ jobs:
             sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" "$BUILD_MANIFEST"
           done
 
+      - name: Apply Grafana manifest
+        run: |
+          kubectl delete namespace ${{ env.K8S_NAMESPACE }} && kubectl create -n ${{ env.K8S_NAMESPACE }} -f kubernetes/818n-g21-grafana-build.yml
+
       - name: Apply core Kubernetes manifest
         run: |
           kubectl apply -n ${{ env.K8S_NAMESPACE }} -f kubernetes/818n-g21-build.yml
-
-      - name: Apply Grafana manifest
-        run: |
-          kubectl create -n ${{ env.K8S_NAMESPACE }} -f kubernetes/818n-g21-grafana-build.yml
