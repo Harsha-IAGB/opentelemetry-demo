@@ -85,7 +85,8 @@ jobs:
         run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
 
       - name: Install Helm
-        run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
       - name: Add & update OpenTelemetry Helm repo
         run: |
@@ -98,21 +99,16 @@ jobs:
       - name: Deploy application with Helm
         run: |
           echo "Generating override-values.yaml"
-          cat > override-values.yaml <<EOF
-            components:
-            EOF
-                    for svc in $SERVICES; do
-                        cat >> override-values.yaml <<EOF
-            ${svc}:
-                image:
-                repository: ${ECR_URI}/${svc}
-                tag: latest
-            EOF
-                    done
-                    echo "Override file contents:"
-                    cat override-values.yaml
+          echo "components:" > override-values.yaml
+          for svc in $SERVICES; do
+            echo "  $svc:" >> override-values.yaml
+            echo "    image:" >> override-values.yaml
+            echo "      repository: $ECR_URI/$svc" >> override-values.yaml
+            echo "      tag: latest" >> override-values.yaml
+          done
+          echo "Override file contents:"
+          cat override-values.yaml
 
-          # Deploy or upgrade the Helm release using the override file
           helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
             --namespace ${{ env.K8S_NAMESPACE }} \
             -f override-values.yaml
