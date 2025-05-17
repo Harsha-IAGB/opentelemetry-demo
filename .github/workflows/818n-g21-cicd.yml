@@ -30,25 +30,19 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build all services with Docker Compose
-        run: docker compose -f docker-compose.yml build
-
-      - name: Tag and push images to ECR
+      - name: Build & push all service images explicitly
         run: |
-          # Dynamically discover service names from compose
-          SERVICES=$(docker compose -f docker-compose.yml config --services)
-          for svc in $SERVICES; do
-            echo "Processing service: $svc"
-            IMAGE_ID=$(docker compose -f docker-compose.yml images -q $svc)
-            if [ -z "$IMAGE_ID" ]; then
-              echo "No image found for $svc, skipping"
-              continue
+          # Loop through src directory and build each Dockerfile
+          for dir in src/*; do
+            if [ -f "$dir/Dockerfile" ]; then
+              svc=$(basename "$dir")
+              echo "Building and pushing image for service: $svc"
+              docker build -t "$ECR_URI/$svc:latest" -f "$dir/Dockerfile" .
+              docker push    "$ECR_URI/$svc:latest"
             fi
-            docker tag "$IMAGE_ID" "$ECR_URI/$svc:latest"
-            docker push "$ECR_URI/$svc:latest"
           done
 
-    # 2) Deploy to EKS using kubectl apply on provided manifests
+  # 2) Deploy to EKS using kubectl apply
   deploy:
     name: Deploy to EKS
     runs-on: ubuntu-latest
@@ -67,13 +61,25 @@ jobs:
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
 
-      - name: Patch namespace and image references in build manifest
+      - name: Patch core manifest image references
         run: |
           BUILD_MANIFEST="kubernetes/818n-g21-build.yml"
           # Update images to point at ECR
-          for svc in $SERVICES; do
-            sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" "$BUILD_MANIFEST"
+          for dir in src/*; do
+            if [ -f "$dir/Dockerfile" ]; then
+              svc=$(basename "$dir")
+              sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" "$BUILD_MANIFEST"
+            fi
           done
+
+      - name: Delete namespace if it exists
+        run: |
+          if kubectl get namespace ${{ env.K8S_NAMESPACE }}; then
+            echo "Deleting existing namespace ${{ env.K8S_NAMESPACE }}"
+            kubectl delete namespace ${{ env.K8S_NAMESPACE }}
+          else
+            echo "Namespace ${{ env.K8S_NAMESPACE }} does not exist, skipping deletion"
+          fi
 
       - name: Apply Grafana manifest
         run: |
