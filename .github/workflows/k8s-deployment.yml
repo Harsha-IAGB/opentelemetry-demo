@@ -1,0 +1,77 @@
+name: k8-deployment
+
+on:
+  workflow_call:
+    inputs:
+      aws-region:
+        required: true
+        type: string
+      cluster-name:
+        required: true
+        type: string
+      namespace:
+        required: true
+        type: string
+      ecr-registry:
+        required: true
+        type: string
+      services:
+        required: true
+        type: string  # JSON array string, e.g. '["service1","service2"]'
+      chart:
+        required: true
+        type: string
+      release-name:
+        required: true
+        type: string
+
+jobs:
+  kubernetes-deployment-apply:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(inputs.services) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ inputs.cluster-name }} --region ${{ inputs.aws-region }}
+
+      - name: Deploy ${{ matrix.service }}
+        run: |
+          kubectl apply -f k8s/Workloads/Deployment/${{ matrix.service }}.yaml --namespace ${{ inputs.namespace }}
+
+  kubernetes-failure-rollout:
+    needs: kubernetes-deployment-apply
+    runs-on: ubuntu-latest
+    if: ${{ failure() }}
+    strategy:
+      matrix:
+        service: ${{ fromJson(inputs.services) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ inputs.cluster-name }} --region ${{ inputs.aws-region }}
+
+      - name: Rollback ${{ matrix.service }}
+        run: |
+          kubectl rollout undo deployment/${{ matrix.service }} --namespace ${{ inputs.namespace }}
