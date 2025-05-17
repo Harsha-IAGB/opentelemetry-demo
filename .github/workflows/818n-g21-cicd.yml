@@ -1,7 +1,6 @@
 # File: .github/workflows/simple-ci-cd.yml
 name: Simple CI/CD Pipeline
 
-# Trigger on push to main branch
 on:
   push:
     branches: [main]
@@ -10,7 +9,6 @@ env:
   AWS_REGION: us-east-2
   AWS_CLUSTER: 818n-g21-eks
   K8S_NAMESPACE: 818n-g21-ns
-  SERVICES: "frontend frontendproxy cartservice checkoutservice currencyservice emailservice adservice accountingservice imageprovider loadgenerator paymentservice productcatalogservice quoteservice recommendationservice shippingservice frauddetectorservice valkey collector jaeger prometheus grafana kafka"
   ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com
 
 jobs:
@@ -37,6 +35,8 @@ jobs:
 
       - name: Tag and push images to ECR
         run: |
+          # Dynamically discover service names from compose
+          SERVICES=$(docker compose -f docker-compose.yml config --services)
           for svc in $SERVICES; do
             echo "Processing service: $svc"
             IMAGE_ID=$(docker compose -f docker-compose.yml images -q $svc)
