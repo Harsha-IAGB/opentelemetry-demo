@@ -15,7 +15,7 @@ env:
   ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com
 
 jobs:
-  # 1) Build and Push Docker Images
+#   # 1) Build and Push Docker Images
 #   build:
 #     name: Build & Push Images
 #     runs-on: ubuntu-latest
@@ -50,11 +50,11 @@ jobs:
 #             docker push "$ECR_URI/$svc:latest"
 #           done
 
-  # 2) Run Integration Smoke Tests
+#   # 2) Run Integration Smoke Tests
 #   test:
 #     name: Integration Smoke Tests
 #     runs-on: ubuntu-latest
-#     # needs: build
+#     needs: build
 #     steps:
 #       - name: Checkout repository
 #         uses: actions/checkout@v3
@@ -63,7 +63,7 @@ jobs:
 #         run: |
 #           docker compose -f docker-compose-tests.yml up \
 #             --abort-on-container-exit \
-#             --exit-code-from load-generator
+#             --exit-code-from loadgenerator
 
   # 3) Deploy to EKS via Helm
   deploy:
@@ -97,14 +97,23 @@ jobs:
 
       - name: Deploy application with Helm
         run: |
-          # Dynamically build override flags for ECR images
-          SET_FLAGS=""
+          # Generate Helm override values file
+          echo "Generating override-values.yaml"
+          cat > override-values.yaml <<EOF
+          # Image overrides for custom ECR-built images
+          EOF
           for svc in $SERVICES; do
-            SET_FLAGS+=" --set $svc.image.repository=$ECR_URI/$svc"
-            SET_FLAGS+=" --set $svc.image.tag=latest"
+            cat >> override-values.yaml <<EOF
+          $svc:
+            image:
+              repository: $ECR_URI/$svc
+              tag: latest
+          EOF
           done
-          helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
-            --namespace ${{ env.K8S_NAMESPACE }} $SET_FLAGS
 
+          # Perform the upgrade/install using the override file
+          helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            -f override-values.yaml
       - name: Verify deployment
         run: kubectl get all -n ${{ env.K8S_NAMESPACE }}
