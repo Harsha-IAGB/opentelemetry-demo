@@ -1,47 +1,149 @@
-# Copyright The OpenTelemetry Authors
-# SPDX-License-Identifier: Apache-2.0
-name: Code Deployment Pipeline
+# File: .github/workflows/ci-cd.yml
+name: CI/CD Pipeline with Helm
 
 on:
   push:
     branches: [ main ]
 
-# Global environment variables for all jobs
 env:
   AWS_REGION: us-east-2
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  ECR_REGISTRY: $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-  SERVICES: cartservice,checkoutservice,currencyservice,emailservice,frontend,productcatalogservice,recommendationservice,shippingservice
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com
   EKS_CLUSTER: 818n-g21-eks
   K8S_NAMESPACE: 818n-g21-ns
+  SERVICES: accountingservice adservice cartservice checkoutservice currencyservice emailservice flagd frauddetectorservice frontend frontendproxy imageprovider jaeger kafka loadgenerator paymentservice productcatalogservice quoteservice recommendationservice shippingservice valkey
 
 jobs:
-  # Build and publish container images for all services
-  build_images:
-    uses: ./.github/workflows/component-build-images.yml
-    secrets: inherit
-    with:
-      aws-region: $AWS_REGION
-      ecr-registry: $ECR_REGISTRY
-      services: $SERVICES
-      push: true
+  # Step 1: Build & Push Docker Images
+  build-and-push-images:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-  # Run integration and policy checks
-#   integration_checks:
-#     needs: build_images
-#     uses: ./.github/workflows/checks.yml
-#     secrets: inherit
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
 
-  # Deploy to Kubernetes via Helm
-  kubernetes_deployment:
-    # needs: integration_checks
-    uses: ./.github/workflows/k8s-deployment.yml
-    secrets: inherit
-    with:
-      aws-region: $AWS_REGION
-      cluster-name: $K8S_NAMESPACE
-      namespace: $K8S_NAMESPACE
-      ecr-registry: $ECR_REGISTRY
-      services: $SERVICES
-      chart: open-telemetry/opentelemetry-demo
-      release-name: otel-demo
+      - name: Create ECR repositories if not exists
+        run: |
+          for svc in $SERVICES; do
+            aws ecr describe-repositories --repository-names $svc || \
+            aws ecr create-repository --repository-name $svc --region us-east-2
+          done
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build & push each service image
+        run: |
+          for svc in $SERVICES; do
+            docker build -t $ECR_REGISTRY/$svc:latest -f src/$svc/Dockerfile .
+            docker push    $ECR_REGISTRY/$svc:latest
+          done
+
+  # Step 2: Deploy with Helm
+  deploy-with-helm:
+    name: Deploy with Helm
+    needs: build-and-push-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region us-east-2
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Check Helm version
+        run: helm version
+
+      - name: Add & update Helm repo
+        run: |
+          helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+          helm repo update
+
+      - name: Ensure namespace exists
+        run: kubectl create namespace $K8S_NAMESPACE || true
+
+      - name: Helm upgrade/install demo
+        run: |
+          helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
+            --namespace $K8S_NAMESPACE \
+            --set accountingservice.image.repository=$ECR_REGISTRY/accountingservice \
+            --set accountingservice.image.tag=latest \
+            --set adservice.image.repository=$ECR_REGISTRY/adservice \
+            --set adservice.image.tag=latest \
+            --set cartservice.image.repository=$ECR_REGISTRY/cartservice \
+            --set cartservice.image.tag=latest \
+            --set checkoutservice.image.repository=$ECR_REGISTRY/checkoutservice \
+            --set checkoutservice.image.tag=latest \
+            --set currencyservice.image.repository=$ECR_REGISTRY/currencyservice \
+            --set currencyservice.image.tag=latest \
+            --set emailservice.image.repository=$ECR_REGISTRY/emailservice \
+            --set emailservice.image.tag=latest \
+            --set flagd.image.repository=$ECR_REGISTRY/flagd \
+            --set flagd.image.tag=latest \
+            --set frauddetectorservice.image.repository=$ECR_REGISTRY/frauddetectorservice \
+            --set frauddetectorservice.image.tag=latest \
+            --set frontend.image.repository=$ECR_REGISTRY/frontend \
+            --set frontend.image.tag=latest \
+            --set frontendproxy.image.repository=$ECR_REGISTRY/frontendproxy \
+            --set frontendproxy.image.tag=latest \
+            --set imageprovider.image.repository=$ECR_REGISTRY/imageprovider \
+            --set imageprovider.image.tag=latest \
+            --set jaeger.image.repository=$ECR_REGISTRY/jaeger \
+            --set jaeger.image.tag=latest \
+            --set kafka.image.repository=$ECR_REGISTRY/kafka \
+            --set kafka.image.tag=latest \
+            --set loadgenerator.image.repository=$ECR_REGISTRY/loadgenerator \
+            --set loadgenerator.image.tag=latest \
+            --set paymentservice.image.repository=$ECR_REGISTRY/paymentservice \
+            --set paymentservice.image.tag=latest \
+            --set productcatalogservice.image.repository=$ECR_REGISTRY/productcatalogservice \
+            --set productcatalogservice.image.tag=latest \
+            --set quoteservice.image.repository=$ECR_REGISTRY/quoteservice \
+            --set quoteservice.image.tag=latest \
+            --set recommendationservice.image.repository=$ECR_REGISTRY/recommendationservice \
+            --set recommendationservice.image.tag=latest \
+            --set shippingservice.image.repository=$ECR_REGISTRY/shippingservice \
+            --set shippingservice.image.tag=latest \
+            --set valkey.image.repository=$ECR_REGISTRY/valkey \
+            --set valkey.image.tag=latest
+
+      - name: Verify Kubernetes resources
+        run: kubectl get all -n $K8S_NAMESPACE
+
+  # Step 3: Rollback on Failure
+  rollback:
+    name: Rollback on Failure
+    if: ${{ failure() }}
+    needs: [build-and-push-images, deploy-with-helm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region us-east-2
+
+      - name: Helm rollback to previous release
+        run: helm rollback otel-demo 1 -n $K8S_NAMESPACE
