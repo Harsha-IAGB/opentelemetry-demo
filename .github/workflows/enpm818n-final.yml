@@ -12,7 +12,7 @@ env:
   AWS_CLUSTER: 818n-g21-eks
   K8S_NAMESPACE: 818n-g21-ns
   SERVICES: "frontend cart checkout email recommendation shipping"
-  ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
+  ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
 jobs:
   # 1) Build and Push Docker Images
@@ -34,7 +34,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build all services with Docker Compose
-        run: docker-compose -f docker-compose.yml build
+        run: docker compose -f docker-compose.yml build
 
       - name: Tag and push images to ECR
         run: |
@@ -55,7 +55,7 @@ jobs:
 
       - name: Run tests via Docker Compose
         run: |
-          docker-compose -f docker-compose-tests.yml up \
+          docker compose -f docker-compose-tests.yml up \
             --abort-on-container-exit \
             --exit-code-from loadgenerator
 
