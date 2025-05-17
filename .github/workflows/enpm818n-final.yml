@@ -67,7 +67,7 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
 
-      - name: Patch manifest and namespace in manifest
+      - name: Patch manifest image references
         run: |
           MANIFEST_PATH="kubernetes/opentelemetry-demo.yaml"
           # Override namespace in the manifest to match target namespace
@@ -79,4 +79,4 @@ jobs:
 
       - name: Apply Kubernetes manifest
         run: |
-          kubectl apply -f "$MANIFEST_PATH"
+          kubectl apply -n ${{ env.K8S_NAMESPACE }} -f "kubernetes/opentelemetry-demo.yaml"
