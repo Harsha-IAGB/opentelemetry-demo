@@ -13,7 +13,7 @@ env:
   K8S_NAMESPACE: 818n-g21-ns
 
 jobs:
-  # Step 1: Build & Push Docker Images for all services dynamically
+  # Step 1: Build & Push Docker Images for all services
   build-and-push-images:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
@@ -28,18 +28,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build and push all service images
+      - name: Prepare ECR repositories and login
         run: |
-          # Loop through all directories in src that contain a Dockerfile
+          # Create repos for each service if they don't exist
           for dir in src/*; do
             if [ -f "$dir/Dockerfile" ]; then
               svc=$(basename "$dir")
-              # Create ECR repo if necessary
               aws ecr describe-repositories --repository-names "$svc" || \
                 aws ecr create-repository --repository-name "$svc" --region $AWS_REGION
-              # Build and push
+            fi
+          done
+          # Login to ECR
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+      - name: Build & push each service image
+        run: |
+          for dir in src/*; do
+            if [ -f "$dir/Dockerfile" ]; then
+              svc=$(basename "$dir")
               docker build -t "$ECR_REGISTRY/$svc:latest" -f "$dir/Dockerfile" .
-              docker push "$ECR_REGISTRY/$svc:latest"
+              docker push    "$ECR_REGISTRY/$svc:latest"
             fi
           done
 
@@ -79,13 +87,13 @@ jobs:
 
       - name: Helm upgrade/install demo
         run: |
-          # Use overrides for images in your ECR registry
           helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
             --namespace $K8S_NAMESPACE \
             $(for dir in src/*; do \
-                svc=$(basename "$dir"); \
-                echo "--set $svc.image.repository=$ECR_REGISTRY/$svc \
-                       --set $svc.image.tag=latest"; \
+                if [ -f "$dir/Dockerfile" ]; then \
+                  svc=$(basename "$dir"); \
+                  echo "--set $svc.image.repository=$ECR_REGISTRY/$svc --set $svc.image.tag=latest"; \
+                fi; \
               done)
 
       - name: Verify Kubernetes resources
