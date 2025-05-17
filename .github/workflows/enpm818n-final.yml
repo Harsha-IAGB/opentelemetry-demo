@@ -12,7 +12,7 @@ env:
   AWS_CLUSTER: 818n-g21-eks
   K8S_NAMESPACE: 818n-g21-ns
   SERVICES: "frontend cart checkout email recommendation shipping"
-  ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+  ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
 
 jobs:
   # 1) Build and Push Docker Images
@@ -28,7 +28,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: $AWS_REGION
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
@@ -73,10 +73,10 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: $AWS_REGION
 
       - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
+        run: aws eks update-kubeconfig --name $AWS_CLUSTER --region $AWS_REGION
 
       - name: Install Helm
         run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -87,7 +87,7 @@ jobs:
           helm repo update
 
       - name: Create namespace (if not exists)
-        run: kubectl create namespace ${{ env.K8S_NAMESPACE }} || true
+        run: kubectl create namespace $K8S_NAMESPACE || true
 
       - name: Deploy application with Helm
         run: |
@@ -98,7 +98,7 @@ jobs:
             SET_FLAGS+=" --set $svc.image.tag=latest"
           done
           helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
-            --namespace ${{ env.K8S_NAMESPACE }} $SET_FLAGS
+            --namespace $K8S_NAMESPACE $SET_FLAGS
 
       - name: Verify deployment
-        run: kubectl get all -n ${{ env.K8S_NAMESPACE }}
+        run: kubectl get all -n $K8S_NAMESPACE
