@@ -81,5 +81,5 @@ jobs:
 
       - name: Apply Grafana manifest
         run: |
-          kubectl -n ${{ env.K8S_NAMESPACE }} apply -f kubernetes/818n-g21-grafana-build.yml
+          kubectl -n ${{ env.K8S_NAMESPACE }} -f create kubernetes/818n-g21-grafana-build.yml
 
