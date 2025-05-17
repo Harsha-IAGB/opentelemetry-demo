@@ -1,24 +1,26 @@
-# File: .github/workflows/ci-cd.yml
-name: CI/CD Pipeline with Helm
+# File: .github/workflows/simple-ci-cd.yml
+name: Simple CI/CD Pipeline
 
+# Trigger on push to main branch
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
+# Global variables
 env:
   AWS_REGION: us-east-2
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com
-  EKS_CLUSTER: 818n-g21-eks
+  AWS_CLUSTER: 818n-g21-eks
   K8S_NAMESPACE: 818n-g21-ns
+  SERVICES: "frontend cart checkout email recommendation shipping"
+  ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
 
 jobs:
-  # Step 1: Build & Push Docker Images for all services
-  build-and-push-images:
-    name: Build & Push Docker Images
+  # 1) Build and Push Docker Images
+  build:
+    name: Build & Push Images
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Configure AWS credentials
@@ -28,39 +30,42 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Prepare ECR repositories and login
-        run: |
-          for dir in src/*; do
-            if [ -f "$dir/Dockerfile" ]; then
-              svc=$(basename "$dir")
-              aws ecr describe-repositories --repository-names "$svc" || \
-                aws ecr create-repository --repository-name "$svc" --region $AWS_REGION
-            fi
-          done
-          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build & push each service image
+      - name: Build all services with Docker Compose
+        run: docker-compose -f docker-compose.yml build
+
+      - name: Tag and push images to ECR
         run: |
-          for dir in src/*; do
-            if [ -f "$dir/Dockerfile" ]; then
-              svc=$(basename "$dir")
-              # Detect if Dockerfile needs Java agent build arg
-              build_args=""
-              if grep -q "OTEL_JAVA_AGENT_VERSION" "$dir/Dockerfile"; then
-                build_args="--build-arg OTEL_JAVA_AGENT_VERSION=1.39.1"
-              fi
-              docker build $build_args -t "$ECR_REGISTRY/$svc:latest" -f "$dir/Dockerfile" .
-              docker push    "$ECR_REGISTRY/$svc:latest"
-            fi
+          # Iterate over SERVICES environment variable
+          for svc in $SERVICES; do
+            docker tag $svc:latest $ECR_URI/$svc:latest
+            docker push $ECR_URI/$svc:latest
           done
 
-  # Step 2: Deploy with Helm
-  deploy-with-helm:
-    name: Deploy with Helm
-    needs: build-and-push-images
+  # 2) Run Integration Smoke Tests
+  test:
+    name: Integration Smoke Tests
     runs-on: ubuntu-latest
+    needs: build
     steps:
-      - name: Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Run tests via Docker Compose
+        run: |
+          docker-compose -f docker-compose-tests.yml up \
+            --abort-on-container-exit \
+            --exit-code-from loadgenerator
+
+  # 3) Deploy to EKS via Helm
+  deploy:
+    name: Deploy to EKS with Helm
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Configure AWS credentials
@@ -70,54 +75,30 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update kubeconfig for EKS
-        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
 
       - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-      - name: Check Helm version
-        run: helm version
-
-      - name: Add & update Helm repo
+      - name: Add & update OpenTelemetry Helm repo
         run: |
           helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
           helm repo update
 
-      - name: Ensure namespace exists
-        run: kubectl create namespace $K8S_NAMESPACE || true
+      - name: Create namespace (if not exists)
+        run: kubectl create namespace ${{ env.K8S_NAMESPACE }} || true
 
-      - name: Helm upgrade/install demo
+      - name: Deploy application with Helm
         run: |
+          # Dynamically build override flags for ECR images
+          SET_FLAGS=""
+          for svc in $SERVICES; do
+            SET_FLAGS+=" --set $svc.image.repository=$ECR_URI/$svc"
+            SET_FLAGS+=" --set $svc.image.tag=latest"
+          done
           helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
-            --namespace $K8S_NAMESPACE \
-            $(for dir in src/*; do \
-                if [ -f "$dir/Dockerfile" ]; then \
-                  svc=$(basename "$dir"); \
-                  echo "--set $svc.image.repository=$ECR_REGISTRY/$svc --set $svc.image.tag=latest"; \
-                fi; \
-              done)
+            --namespace ${{ env.K8S_NAMESPACE }} $SET_FLAGS
 
-      - name: Verify Kubernetes resources
-        run: kubectl get all -n $K8S_NAMESPACE
-
-  # Step 3: Rollback on Failure
-  rollback:
-    name: Rollback on Failure
-    if: ${{ failure() }}
-    needs: [build-and-push-images, deploy-with-helm]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update kubeconfig for EKS
-        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
-
-      - name: Helm rollback to previous release
-        run: helm rollback otel-demo 1 -n $K8S_NAMESPACE
+      - name: Verify deployment
+        run: kubectl get all -n ${{ env.K8S_NAMESPACE }}
