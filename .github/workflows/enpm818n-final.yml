@@ -97,7 +97,6 @@ jobs:
 
       - name: Deploy application with Helm
         run: |
-          # Generate Helm override values file
           echo "Generating override-values.yaml"
           cat > override-values.yaml <<EOF
             components:
@@ -110,12 +109,13 @@ jobs:
                 tag: latest
             EOF
                     done
+                    echo "Override file contents:"
+                    cat override-values.yaml
 
-          # Perform the upgrade/install using the override file
+          # Deploy or upgrade the Helm release using the override file
           helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
             --namespace ${{ env.K8S_NAMESPACE }} \
-            -f override-values.yaml open-telemetry/opentelemetry-demo \
-            --namespace ${{ env.K8S_NAMESPACE }} \
             -f override-values.yaml
+
       - name: Verify deployment
         run: kubectl get all -n ${{ env.K8S_NAMESPACE }}
