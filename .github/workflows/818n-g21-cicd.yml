@@ -48,7 +48,7 @@ jobs:
 #             docker push "$ECR_URI/$svc:latest"
 #           done
 
-  # 2) Deploy to EKS using kubectl apply
+  # 2) Deploy to EKS using kubectl apply on generated manifests
   deploy:
     name: Deploy to EKS
     runs-on: ubuntu-latest
@@ -57,6 +57,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Generate Kubernetes manifests
+        run: |
+          make generate-kubernetes-manifests
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -64,14 +68,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update kubeconfig
+      - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
 
-      - name: Patch manifest image references
+      - name: Patch namespace and image references
         run: |
+          MANIFEST_PATH="818n-g21-build.yaml"
+          # Ensure namespace matches
+          sed -i "s|namespace: .*|namespace: ${{ env.K8S_NAMESPACE }}|" "$MANIFEST_PATH"
+          # Remove oversized Grafana dashboards ConfigMap to avoid annotation limits
+          sed -i '/^kind: ConfigMap/,/^$/{/^kind: ConfigMap.*grafana-dashboards/!b;d}' "$MANIFEST_PATH"
+          # Update images to point at ECR
           for svc in $SERVICES; do
-            sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" kubernetes/opentelemetry-demo.yaml
+            sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" "$MANIFEST_PATH"
           done
 
       - name: Apply Kubernetes manifest
-        run: kubectl apply -n ${{ env.K8S_NAMESPACE }} -f kubernetes/opentelemetry-demo.yaml
+        run: |
+          kubectl apply --namespace ${{ env.K8S_NAMESPACE }} -f "$MANIFEST_PATH"
