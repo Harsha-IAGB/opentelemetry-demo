@@ -69,7 +69,7 @@ jobs:
 
       - name: Patch manifest and namespace in manifest
         run: |
-          MANIFEST_PATH="../../opentelemetry-demo.yaml"
+          MANIFEST_PATH="kubernetes/opentelemetry-demo.yaml"
           # Override namespace in the manifest to match target namespace
           sed -i "s/^namespace: .*/namespace: ${{ env.K8S_NAMESPACE }}/" "$MANIFEST_PATH"
           # Update image references for each service
