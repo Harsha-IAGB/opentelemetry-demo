@@ -69,11 +69,11 @@ jobs:
 
       - name: Patch manifest image references
         run: |
-          MANIFEST_PATH="../../opentelemetry-demo.yaml"
+          MANIFEST_PATH="../../kubernetes/opentelemetry-demo.yaml"
           for svc in $SERVICES; do
             sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" "$MANIFEST_PATH"
           done
 
       - name: Apply Kubernetes manifest
         run: |
-          kubectl apply -n ${{ env.K8S_NAMESPACE }} -f "../../opentelemetry-demo.yaml"
+          kubectl apply -n ${{ env.K8S_NAMESPACE }} -f "../../kubernetes/opentelemetry-demo.yaml"
