@@ -99,9 +99,30 @@ jobs:
       - name: Deploy application with Helm
         run: |
           echo "Generating override-values.yaml"
-          echo "components:" > override-values.yaml
+          echo "collector:" > override-values.yaml
+          echo "  image:" >> override-values.yaml
+          echo "    repository: $ECR_URI/collector" >> override-values.yaml
+          echo "    tag: latest" >> override-values.yaml
+          echo "jaeger:" >> override-values.yaml
+          echo "  image:" >> override-values.yaml
+          echo "    repository: $ECR_URI/jaeger" >> override-values.yaml
+          echo "    tag: latest" >> override-values.yaml
+          echo "kafka:" >> override-values.yaml
+          echo "  image:" >> override-values.yaml
+          echo "    repository: $ECR_URI/kafka" >> override-values.yaml
+          echo "    tag: latest" >> override-values.yaml
+          echo "prometheus:" >> override-values.yaml
+          echo "  image:" >> override-values.yaml
+          echo "    repository: $ECR_URI/prometheus" >> override-values.yaml
+          echo "    tag: latest" >> override-values.yaml
+          echo "grafana:" >> override-values.yaml
+          echo "  image:" >> override-values.yaml
+          echo "    repository: $ECR_URI/grafana" >> override-values.yaml
+          echo "    tag: latest" >> override-values.yaml
+          echo "components:" >> override-values.yaml
           for svc in $SERVICES; do
-            echo "  $svc:" >> override-values.yaml
+            comp=$(echo $svc | sed 's/-//g')
+            echo "  $comp:" >> override-values.yaml
             echo "    image:" >> override-values.yaml
             echo "      repository: $ECR_URI/$svc" >> override-values.yaml
             echo "      tag: latest" >> override-values.yaml
