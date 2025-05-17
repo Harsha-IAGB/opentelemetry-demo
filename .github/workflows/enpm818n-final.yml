@@ -11,7 +11,7 @@ env:
   AWS_REGION: us-east-2
   AWS_CLUSTER: 818n-g21-eks
   K8S_NAMESPACE: 818n-g21-ns
-  SERVICES: "shipping"
+  SERVICES: "frontend frontendproxy cartservice checkoutservice currencyservice emailservice adservice accountingservice imageprovider loadgenerator paymentservice productcatalogservice quoteservice recommendationservice shippingservice frauddetectorservice valkey collector jaeger prometheus grafana kafka"
   ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com
 
 jobs:
