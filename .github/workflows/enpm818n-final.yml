@@ -11,10 +11,9 @@ env:
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com
   EKS_CLUSTER: 818n-g21-eks
   K8S_NAMESPACE: 818n-g21-ns
-  SERVICES: accountingservice adservice cartservice checkoutservice currencyservice emailservice flagd frauddetectorservice frontend frontendproxy imageprovider jaeger kafka loadgenerator paymentservice productcatalogservice quoteservice recommendationservice shippingservice valkey
 
 jobs:
-  # Step 1: Build & Push Docker Images
+  # Step 1: Build & Push Docker Images for all services dynamically
   build-and-push-images:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
@@ -27,23 +26,21 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Create ECR repositories if not exists
+      - name: Build and push all service images
         run: |
-          for svc in $SERVICES; do
-            aws ecr describe-repositories --repository-names $svc || \
-            aws ecr create-repository --repository-name $svc --region us-east-2
-          done
-
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1
-
-      - name: Build & push each service image
-        run: |
-          for svc in $SERVICES; do
-            docker build -t $ECR_REGISTRY/$svc:latest -f src/$svc/Dockerfile .
-            docker push    $ECR_REGISTRY/$svc:latest
+          # Loop through all directories in src that contain a Dockerfile
+          for dir in src/*; do
+            if [ -f "$dir/Dockerfile" ]; then
+              svc=$(basename "$dir")
+              # Create ECR repo if necessary
+              aws ecr describe-repositories --repository-names "$svc" || \
+                aws ecr create-repository --repository-name "$svc" --region $AWS_REGION
+              # Build and push
+              docker build -t "$ECR_REGISTRY/$svc:latest" -f "$dir/Dockerfile" .
+              docker push "$ECR_REGISTRY/$svc:latest"
+            fi
           done
 
   # Step 2: Deploy with Helm
@@ -60,10 +57,10 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Update kubeconfig for EKS
-        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region us-east-2
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
 
       - name: Install Helm
         run: |
@@ -82,48 +79,14 @@ jobs:
 
       - name: Helm upgrade/install demo
         run: |
+          # Use overrides for images in your ECR registry
           helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
             --namespace $K8S_NAMESPACE \
-            --set accountingservice.image.repository=$ECR_REGISTRY/accountingservice \
-            --set accountingservice.image.tag=latest \
-            --set adservice.image.repository=$ECR_REGISTRY/adservice \
-            --set adservice.image.tag=latest \
-            --set cartservice.image.repository=$ECR_REGISTRY/cartservice \
-            --set cartservice.image.tag=latest \
-            --set checkoutservice.image.repository=$ECR_REGISTRY/checkoutservice \
-            --set checkoutservice.image.tag=latest \
-            --set currencyservice.image.repository=$ECR_REGISTRY/currencyservice \
-            --set currencyservice.image.tag=latest \
-            --set emailservice.image.repository=$ECR_REGISTRY/emailservice \
-            --set emailservice.image.tag=latest \
-            --set flagd.image.repository=$ECR_REGISTRY/flagd \
-            --set flagd.image.tag=latest \
-            --set frauddetectorservice.image.repository=$ECR_REGISTRY/frauddetectorservice \
-            --set frauddetectorservice.image.tag=latest \
-            --set frontend.image.repository=$ECR_REGISTRY/frontend \
-            --set frontend.image.tag=latest \
-            --set frontendproxy.image.repository=$ECR_REGISTRY/frontendproxy \
-            --set frontendproxy.image.tag=latest \
-            --set imageprovider.image.repository=$ECR_REGISTRY/imageprovider \
-            --set imageprovider.image.tag=latest \
-            --set jaeger.image.repository=$ECR_REGISTRY/jaeger \
-            --set jaeger.image.tag=latest \
-            --set kafka.image.repository=$ECR_REGISTRY/kafka \
-            --set kafka.image.tag=latest \
-            --set loadgenerator.image.repository=$ECR_REGISTRY/loadgenerator \
-            --set loadgenerator.image.tag=latest \
-            --set paymentservice.image.repository=$ECR_REGISTRY/paymentservice \
-            --set paymentservice.image.tag=latest \
-            --set productcatalogservice.image.repository=$ECR_REGISTRY/productcatalogservice \
-            --set productcatalogservice.image.tag=latest \
-            --set quoteservice.image.repository=$ECR_REGISTRY/quoteservice \
-            --set quoteservice.image.tag=latest \
-            --set recommendationservice.image.repository=$ECR_REGISTRY/recommendationservice \
-            --set recommendationservice.image.tag=latest \
-            --set shippingservice.image.repository=$ECR_REGISTRY/shippingservice \
-            --set shippingservice.image.tag=latest \
-            --set valkey.image.repository=$ECR_REGISTRY/valkey \
-            --set valkey.image.tag=latest
+            $(for dir in src/*; do \
+                svc=$(basename "$dir"); \
+                echo "--set $svc.image.repository=$ECR_REGISTRY/$svc \
+                       --set $svc.image.tag=latest"; \
+              done)
 
       - name: Verify Kubernetes resources
         run: kubectl get all -n $K8S_NAMESPACE
@@ -140,10 +103,10 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Update kubeconfig for EKS
-        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region us-east-2
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
 
       - name: Helm rollback to previous release
         run: helm rollback otel-demo 1 -n $K8S_NAMESPACE
