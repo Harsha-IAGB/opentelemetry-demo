@@ -34,7 +34,7 @@ jobs:
   # Deploy to Kubernetes via Helm
   kubernetes_deployment:
     needs: integration_checks
-    uses: ./.github/workflows/k8-deployment.yml
+    uses: ./.github/workflows/k8s-deployment.yml
     secrets: inherit
     with:
       aws-region: $AWS_REGION
