@@ -100,19 +100,21 @@ jobs:
           # Generate Helm override values file
           echo "Generating override-values.yaml"
           cat > override-values.yaml <<EOF
-          # Image overrides for custom ECR-built images
-          EOF
-          for svc in $SERVICES; do
-            cat >> override-values.yaml <<EOF
-          $svc:
-            image:
-              repository: $ECR_URI/$svc
-              tag: latest
-          EOF
-          done
+            components:
+            EOF
+                    for svc in $SERVICES; do
+                        cat >> override-values.yaml <<EOF
+            ${svc}:
+                image:
+                repository: ${ECR_URI}/${svc}
+                tag: latest
+            EOF
+                    done
 
           # Perform the upgrade/install using the override file
           helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            -f override-values.yaml open-telemetry/opentelemetry-demo \
             --namespace ${{ env.K8S_NAMESPACE }} \
             -f override-values.yaml
       - name: Verify deployment
