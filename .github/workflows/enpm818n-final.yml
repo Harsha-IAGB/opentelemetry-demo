@@ -30,7 +30,6 @@ jobs:
 
       - name: Prepare ECR repositories and login
         run: |
-          # Create repos for each service if they don't exist
           for dir in src/*; do
             if [ -f "$dir/Dockerfile" ]; then
               svc=$(basename "$dir")
@@ -38,7 +37,6 @@ jobs:
                 aws ecr create-repository --repository-name "$svc" --region $AWS_REGION
             fi
           done
-          # Login to ECR
           aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
 
       - name: Build & push each service image
@@ -46,7 +44,12 @@ jobs:
           for dir in src/*; do
             if [ -f "$dir/Dockerfile" ]; then
               svc=$(basename "$dir")
-              docker build -t "$ECR_REGISTRY/$svc:latest" -f "$dir/Dockerfile" .
+              # Detect if Dockerfile needs Java agent build arg
+              build_args=""
+              if grep -q "OTEL_JAVA_AGENT_VERSION" "$dir/Dockerfile"; then
+                build_args="--build-arg OTEL_JAVA_AGENT_VERSION=1.39.1"
+              fi
+              docker build $build_args -t "$ECR_REGISTRY/$svc:latest" -f "$dir/Dockerfile" .
               docker push    "$ECR_REGISTRY/$svc:latest"
             fi
           done
