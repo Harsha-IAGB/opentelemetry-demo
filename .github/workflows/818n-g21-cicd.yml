@@ -15,40 +15,40 @@ env:
 
 jobs:
   # 1) Build and Push Docker Images
-#   build:
-#     name: Build & Push Images
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout repository
-#         uses: actions/checkout@v3
+  # build:
+  #   name: Build & Push Images
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v3
 
-#       - name: Configure AWS credentials
-#         uses: aws-actions/configure-aws-credentials@v2
-#         with:
-#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#           aws-region: ${{ env.AWS_REGION }}
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v2
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ env.AWS_REGION }}
 
-#       - name: Login to Amazon ECR
-#         uses: aws-actions/amazon-ecr-login@v1
+  #     - name: Login to Amazon ECR
+  #       uses: aws-actions/amazon-ecr-login@v1
 
-#       - name: Build all services with Docker Compose
-#         run: docker compose -f docker-compose.yml build
+  #     - name: Build all services with Docker Compose
+  #       run: docker compose -f docker-compose.yml build
 
-#       - name: Tag and push images to ECR
-#         run: |
-#           for svc in $SERVICES; do
-#             echo "Processing service: $svc"
-#             IMAGE_ID=$(docker compose -f docker-compose.yml images -q $svc)
-#             if [ -z "$IMAGE_ID" ]; then
-#               echo "No image found for $svc, skipping"
-#               continue
-#             fi
-#             docker tag "$IMAGE_ID" "$ECR_URI/$svc:latest"
-#             docker push "$ECR_URI/$svc:latest"
-#           done
+  #     - name: Tag and push images to ECR
+  #       run: |
+  #         for svc in $SERVICES; do
+  #           echo "Processing service: $svc"
+  #           IMAGE_ID=$(docker compose -f docker-compose.yml images -q $svc)
+  #           if [ -z "$IMAGE_ID" ]; then
+  #             echo "No image found for $svc, skipping"
+  #             continue
+  #           fi
+  #           docker tag "$IMAGE_ID" "$ECR_URI/$svc:latest"
+  #           docker push "$ECR_URI/$svc:latest"
+  #         done
 
-  # 2) Deploy to EKS using kubectl apply on generated manifests
+    # 2) Deploy to EKS using kubectl apply on provided manifests
   deploy:
     name: Deploy to EKS
     runs-on: ubuntu-latest
@@ -56,10 +56,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      - name: Generate Kubernetes manifests
-        run: |
-          make generate-kubernetes-manifests
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -71,18 +67,18 @@ jobs:
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
 
-      - name: Patch namespace and image references
+      - name: Patch namespace and image references in build manifest
         run: |
-          MANIFEST_PATH="818n-g21-build.yaml"
-          # Ensure namespace matches
-          sed -i "s|namespace: .*|namespace: ${{ env.K8S_NAMESPACE }}|" "$MANIFEST_PATH"
-          # Remove oversized Grafana dashboards ConfigMap to avoid annotation limits
-          sed -i '/^kind: ConfigMap/,/^$/{/^kind: ConfigMap.*grafana-dashboards/!b;d}' "$MANIFEST_PATH"
+          BUILD_MANIFEST="kubernetes/818n-g21-build.yml"
           # Update images to point at ECR
           for svc in $SERVICES; do
-            sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" "$MANIFEST_PATH"
+            sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" "$BUILD_MANIFEST"
           done
 
-      - name: Apply Kubernetes manifest
+      - name: Apply core Kubernetes manifest
         run: |
-          kubectl apply --namespace ${{ env.K8S_NAMESPACE }} -f "$MANIFEST_PATH"
+          kubectl apply --namespace ${{ env.K8S_NAMESPACE }} -f kubernetes/818n-g21-build.yml
+
+      - name: Apply Grafana manifest
+        run: |
+          kubectl apply --namespace ${{ env.K8S_NAMESPACE }} -f kubernetes/818n-g21-grafana-build.yml
