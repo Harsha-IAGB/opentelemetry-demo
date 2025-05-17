@@ -67,15 +67,11 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
 
-      - name: Patch manifest and namespace in manifest
+      - name: Patch manifest image references
         run: |
-          MANIFEST_PATH="kubernetes/opentelemetry-demo.yaml"
-          # Replace any namespace entries in the manifest to match target namespace
-          sed -i "s|namespace: *otel-demo|namespace: ${{ env.K8S_NAMESPACE }}|g" "$MANIFEST_PATH"
-          # Update image references for each service
           for svc in $SERVICES; do
-            sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" "$MANIFEST_PATH"
+            sed -i "s|image: .*${svc}.*|image: ${ECR_URI}/${svc}:latest|g" kubernetes/opentelemetry-demo.yaml
           done
+
       - name: Apply Kubernetes manifest
-        run: |
-          kubectl apply --namespace ${{ env.K8S_NAMESPACE }} -f "$MANIFEST_PATH"
+        run: kubectl apply -n ${{ env.K8S_NAMESPACE }} -f kubernetes/opentelemetry-demo.yaml

@@ -5,7 +5,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: otel-demo
+  name: 818n-g21-ns
 ---
 # Source: opentelemetry-demo/charts/opensearch/templates/poddisruptionbudget.yaml
 apiVersion: policy/v1
@@ -34,7 +34,7 @@ metadata:
     app.kubernetes.io/instance: opentelemetry-demo
     app.kubernetes.io/version: "11.5.2"
   name: grafana
-  namespace: otel-demo
+  namespace: 818n-g21-ns
 ---
 # Source: opentelemetry-demo/charts/jaeger/templates/allinone-sa.yaml
 apiVersion: v1
@@ -53,7 +53,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: otel-collector
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: opentelemetry-collector
     app.kubernetes.io/instance: opentelemetry-demo
@@ -71,7 +71,7 @@ metadata:
     app.kubernetes.io/version: v3.1.0
     app.kubernetes.io/part-of: prometheus
   name: prometheus
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   annotations:
     {}
 ---
@@ -91,7 +91,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: grafana
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: opentelemetry-demo
@@ -108,7 +108,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: opentelemetry-demo
@@ -255,7 +255,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: otel-collector
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: opentelemetry-collector
     app.kubernetes.io/instance: opentelemetry-demo
@@ -428,7 +428,7 @@ metadata:
     app.kubernetes.io/version: v3.1.0
     app.kubernetes.io/part-of: prometheus
   name: prometheus
-  namespace: otel-demo
+  namespace: 818n-g21-ns
 data:
   allow-snippet-annotations: "false"
   alerting_rules.yml: |
@@ -755,7 +755,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: flagd-config
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     
     app.kubernetes.io/instance: opentelemetry-demo
@@ -880,7 +880,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-dashboards
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     
     app.kubernetes.io/instance: opentelemetry-demo
@@ -9896,7 +9896,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: product-catalog-products
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     
     app.kubernetes.io/instance: opentelemetry-demo
@@ -10150,7 +10150,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: grafana
-    namespace: otel-demo
+    namespace: 818n-g21-ns
 roleRef:
   kind: ClusterRole
   name: grafana-clusterrole
@@ -10173,7 +10173,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: otel-collector
-  namespace: otel-demo
+  namespace: 818n-g21-ns
 ---
 # Source: opentelemetry-demo/charts/prometheus/templates/clusterrolebinding.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -10189,7 +10189,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: prometheus
-    namespace: otel-demo
+    namespace: 818n-g21-ns
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -10200,7 +10200,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: grafana
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: opentelemetry-demo
@@ -10212,7 +10212,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: grafana
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: opentelemetry-demo
@@ -10224,14 +10224,14 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: grafana
-  namespace: otel-demo
+  namespace: 818n-g21-ns
 ---
 # Source: opentelemetry-demo/charts/grafana/templates/service.yaml
 apiVersion: v1
 kind: Service
 metadata:
   name: grafana
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: opentelemetry-demo
@@ -10405,7 +10405,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: otel-collector
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: opentelemetry-collector
     app.kubernetes.io/instance: opentelemetry-demo
@@ -10462,7 +10462,7 @@ metadata:
     app.kubernetes.io/version: v3.1.0
     app.kubernetes.io/part-of: prometheus
   name: prometheus
-  namespace: otel-demo
+  namespace: 818n-g21-ns
 spec:
   ports:
     - name: http
@@ -10881,7 +10881,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: opentelemetry-demo
@@ -11122,7 +11122,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: otel-collector
-  namespace: otel-demo
+  namespace: 818n-g21-ns
   labels:
     app.kubernetes.io/name: opentelemetry-collector
     app.kubernetes.io/instance: opentelemetry-demo
@@ -11227,7 +11227,7 @@ metadata:
     app.kubernetes.io/version: v3.1.0
     app.kubernetes.io/part-of: prometheus
   name: prometheus
-  namespace: otel-demo
+  namespace: 818n-g21-ns
 spec:
   selector:
     matchLabels:
