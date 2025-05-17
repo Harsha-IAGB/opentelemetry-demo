@@ -11,7 +11,7 @@ env:
   AWS_REGION: us-east-2
   AWS_CLUSTER: 818n-g21-eks
   K8S_NAMESPACE: 818n-g21-ns
-  SERVICES: "frontend cart"
+  SERVICES: "shipping"
   ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com
 
 jobs:
@@ -38,10 +38,16 @@ jobs:
 
       - name: Tag and push images to ECR
         run: |
-          # Iterate over SERVICES environment variable
+          # Use docker compose to get built image IDs and push to ECR
           for svc in $SERVICES; do
-            docker tag $svc:latest $ECR_URI/$svc:latest
-            docker push $ECR_URI/$svc:latest
+            echo "Processing service: $svc"
+            IMAGE_ID=$(docker compose -f docker-compose.yml images -q $svc)
+            if [ -z "$IMAGE_ID" ]; then
+              echo "No image found for $svc, skipping"
+              continue
+            fi
+            docker tag "$IMAGE_ID" "$ECR_URI/$svc:latest"
+            docker push "$ECR_URI/$svc:latest"
           done
 
   # 2) Run Integration Smoke Tests
@@ -76,7 +82,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name $AWS_CLUSTER --region $AWS_REGION
+        run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
 
       - name: Install Helm
         run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -87,7 +93,7 @@ jobs:
           helm repo update
 
       - name: Create namespace (if not exists)
-        run: kubectl create namespace $K8S_NAMESPACE || true
+        run: kubectl create namespace ${{ env.K8S_NAMESPACE }} || true
 
       - name: Deploy application with Helm
         run: |
@@ -98,7 +104,7 @@ jobs:
             SET_FLAGS+=" --set $svc.image.tag=latest"
           done
           helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
-            --namespace $K8S_NAMESPACE $SET_FLAGS
+            --namespace ${{ env.K8S_NAMESPACE }} $SET_FLAGS
 
       - name: Verify deployment
-        run: kubectl get all -n $K8S_NAMESPACE
+        run: kubectl get all -n ${{ env.K8S_NAMESPACE }}
