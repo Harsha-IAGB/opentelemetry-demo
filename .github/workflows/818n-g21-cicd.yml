@@ -1,5 +1,4 @@
-# File: .github/workflows/simple-ci-cd.yml
-name: Simple CI/CD Pipeline
+name: CI/CD Pipeline
 
 on:
   push:
@@ -12,41 +11,39 @@ env:
   ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com
 
 jobs:
-  # # 1) Build and Push Docker Images
-  # build:
-  #   name: Build & Push Images
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v3
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-  #     - name: Configure AWS credentials
-  #       uses: aws-actions/configure-aws-credentials@v2
-  #       with:
-  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #         aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-  #     - name: Login to Amazon ECR
-  #       uses: aws-actions/amazon-ecr-login@v1
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
 
-  #     - name: Build & push all service images explicitly
-  #       run: |
-  #         # Loop through src directory and build each Dockerfile
-  #         for dir in src/*; do
-  #           if [ -f "$dir/Dockerfile" ]; then
-  #             svc=$(basename "$dir")
-  #             echo "Building and pushing image for service: $svc"
-  #             docker build -t "$ECR_URI/$svc:latest" -f "$dir/Dockerfile" .
-  #             docker push    "$ECR_URI/$svc:latest"
-  #           fi
-  #         done
+      - name: Build & push all service images explicitly
+        run: |
+          # Loop through src directory and build each Dockerfile
+          for dir in src/*; do
+            if [ -f "$dir/Dockerfile" ]; then
+              svc=$(basename "$dir")
+              echo "Building and pushing image for service: $svc"
+              docker build -t "$ECR_URI/$svc:latest" -f "$dir/Dockerfile" .
+              docker push    "$ECR_URI/$svc:latest"
+            fi
+          done
 
-  # 2) Deploy to EKS using kubectl apply
   deploy:
     name: Deploy to EKS
     runs-on: ubuntu-latest
-    # needs: build
+    needs: build
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -72,19 +69,44 @@ jobs:
             fi
           done
 
-      - name: Delete namespace if it exists
-        run: |
-          if kubectl get namespace ${{ env.K8S_NAMESPACE }}; then
-            echo "Deleting existing namespace ${{ env.K8S_NAMESPACE }}"
-            kubectl delete namespace ${{ env.K8S_NAMESPACE }}
-          else
-            echo "Namespace ${{ env.K8S_NAMESPACE }} does not exist, skipping deletion"
-          fi
-
       - name: Apply Grafana manifest
         run: |
-          kubectl wait --for=delete ns/818n-g21-ns --timeout=60s && kubectl create -n ${{ env.K8S_NAMESPACE }} -f kubernetes/818n-g21-grafana-build.yml
+          kubectl create -n ${{ env.K8S_NAMESPACE }} -f kubernetes/818n-g21-grafana-build.yml
 
       - name: Apply core Kubernetes manifest
         run: |
           kubectl apply -n ${{ env.K8S_NAMESPACE }} -f kubernetes/818n-g21-build.yml
+
+  rollback:
+    name: Rollback on Failure
+    needs: [build, deploy]
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.AWS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Roll back Deployments
+        run: |
+          for d in $(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -o name); do
+            echo "Rolling back $d"
+            kubectl rollout undo $d -n ${{ env.K8S_NAMESPACE }}
+          done
+
+      - name: Roll back StatefulSets
+        run: |
+          for s in $(kubectl get statefulsets -n ${{ env.K8S_NAMESPACE }} -o name); do
+            echo "Rolling back $s"
+            kubectl rollout undo $s -n ${{ env.K8S_NAMESPACE }}
+          done
+          fi
