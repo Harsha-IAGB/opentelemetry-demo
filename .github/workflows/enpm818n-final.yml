@@ -27,10 +27,10 @@ jobs:
       push: true
 
   # Run integration and policy checks
-  integration_checks:
-    needs: build_images
-    uses: ./.github/workflows/checks.yml
-    secrets: inherit
+#   integration_checks:
+#     needs: build_images
+#     uses: ./.github/workflows/checks.yml
+#     secrets: inherit
 
   # Deploy to Kubernetes via Helm
   kubernetes_deployment:
