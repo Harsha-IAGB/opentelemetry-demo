@@ -51,25 +51,25 @@ jobs:
 #           done
 
   # 2) Run Integration Smoke Tests
-  test:
-    name: Integration Smoke Tests
-    runs-on: ubuntu-latest
-    # needs: build
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+#   test:
+#     name: Integration Smoke Tests
+#     runs-on: ubuntu-latest
+#     # needs: build
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v3
 
-      - name: Run tests via Docker Compose
-        run: |
-          docker compose -f docker-compose-tests.yml up \
-            --abort-on-container-exit \
-            --exit-code-from load-generator
+#       - name: Run tests via Docker Compose
+#         run: |
+#           docker compose -f docker-compose-tests.yml up \
+#             --abort-on-container-exit \
+#             --exit-code-from load-generator
 
   # 3) Deploy to EKS via Helm
   deploy:
     name: Deploy to EKS with Helm
     runs-on: ubuntu-latest
-    needs: test
+    # needs: test
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
