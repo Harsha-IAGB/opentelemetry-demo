@@ -99,15 +99,15 @@ jobs:
       - name: Roll back Deployments
         run: |
           for d in $(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -o name); do
-            echo "Rolling back $d"
-            kubectl rollout undo $d -n ${{ env.K8S_NAMESPACE }}
+            echo "Attempting rollback for $d"
+            # try rollback; if no history, skip
+            kubectl rollout undo $d -n ${{ env.K8S_NAMESPACE }} || echo "  ↳ no rollout history for $d, skipping"
           done
 
       - name: Roll back StatefulSets
         run: |
           for s in $(kubectl get statefulsets -n ${{ env.K8S_NAMESPACE }} -o name); do
-            echo "Rolling back $s"
-            kubectl rollout undo $s -n ${{ env.K8S_NAMESPACE }}
+            echo "Attempting rollback for $s"
+            kubectl rollout undo $s -n ${{ env.K8S_NAMESPACE }} || echo "  ↳ no rollout history for $s, skipping"
           done
-          fi
 
