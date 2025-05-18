@@ -110,3 +110,4 @@ jobs:
             kubectl rollout undo $s -n ${{ env.K8S_NAMESPACE }}
           done
           fi
+
